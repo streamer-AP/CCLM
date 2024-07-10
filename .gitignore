@@ -1,0 +1,5 @@
+weights/*
+data/*
+*.pyc
+outputs/*
+*.jpg
