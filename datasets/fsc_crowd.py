@@ -14,7 +14,6 @@ def make_transform(image_set):
     if image_set == "train":
         return A.Compose([
             ColorJitter(),
-            A.ToGray(p=0.3),
             # ShiftScaleRotate(shift_limit=0.2, scale_limit=0.1, rotate_limit=15,
             #                  p=0.2, border_mode=cv2.BORDER_CONSTANT, value=0),
             A.LongestMaxSize(768),

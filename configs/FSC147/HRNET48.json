@@ -27,7 +27,7 @@
             "ann_file": "/home/xinyan/workspace/counting/FSC/CCLM/data/FSC147/coco_anno/train.json",
             "img_prefix": "/home/xinyan/workspace/counting/FSC/CCLM/data/FSC147/images_384_VarV2",
             "size_divisor": 32,
-            "batch_size":  2,
+            "batch_size":  4,
             "num_workers": 16,
             "shuffle": true,
             "drop_last": true,

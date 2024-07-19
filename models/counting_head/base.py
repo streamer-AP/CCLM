@@ -99,7 +99,7 @@ class Simple(nn.Module):
 
     def forward(self, x, x_example):
         x0, x1, x2 , x3, x4  = x
-        box=x_example/4
+        box=x_example/2
         
         z1=self.fpn_fuse1([x0, x1, x2, x3,x4])
         z_e=roi_pooling(z1, box, (7, 7))#(N, M, C, 7, 7)
@@ -119,7 +119,7 @@ class Simple(nn.Module):
         # attention_map = F.softmax(attention_scores, dim=-1)  # (N, 49, H*W)
         attention_map = attention_scores.mean(dim=1)  # (N, H*W)
         attention_map = attention_map.view(N, H, W)  # (N, H, W)
-        
+        attention_map = F.sigmoid(attention_map)
         out1 = self.last_layer(z1*attention_map.unsqueeze(1))
         z2=self.fpn_fuse2([x0, x1, x2, x3,x4])
         offset = (2 * self.offset_layer(z2) - 1.0) * self.radius

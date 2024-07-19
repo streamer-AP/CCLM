@@ -32,6 +32,10 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
             atten_map=atten_map[0].detach().cpu().numpy()
             plt.imshow(atten_map)
             plt.savefig("atten_map.png")
+            img=inputs[0][:3].detach().cpu().numpy()
+            img=np.transpose(img,(1,2,0))
+            plt.imshow(img)
+            plt.savefig("img.png")
             draw=False
         loss_dict = criterion(outputs_dict, labels)
         all_loss = loss_dict["all"]
