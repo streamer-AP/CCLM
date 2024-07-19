@@ -101,10 +101,13 @@ class SingleScaleEncoderDecoderCounting(nn.Module):
             self.stride=2
         # self.get_model_complexity(input_shape=(3, 1536, 1536))
     @autocast("cuda")
-    def forward(self, x, ext_info=None):
-
-        z = self.backbone(x)
-        out_dict = self.decoder_layers(z)
+    def forward(self, x, ext_info):
+        image=x[:,0:3]
+        example_box=ext_info[:,:3,...]# B*3*4 for x_min, y_min, width, height
+        
+        z = self.backbone(image)
+        
+        out_dict = self.decoder_layers(z,example_box)
         return out_dict
     @torch.no_grad()
     def sliding_window_infer(self,x,threshold=0.8,loc_kernel_size=3,roi_size=1024,mode="gaussian",sigma_scale=0.125):
@@ -116,11 +119,13 @@ class SingleScaleEncoderDecoderCounting(nn.Module):
 
         return [pred_points],predict_counting_map
     @torch.no_grad()
-    def forward_points(self, x, threshold=0.8,loc_kernel_size=3):
+    def forward_points(self, x, ext_info, threshold=0.8,loc_kernel_size=3):
         assert loc_kernel_size%2==1
         assert x.shape[0]==1
-        z = self.backbone(x)
-        out_dict = self.decoder_layers(z)
+        image=x[:,0:3]
+        example_box=ext_info[:,:3,...]# B*3*4 for x_min, y_min, width, height
+        z = self.backbone(image)
+        out_dict = self.decoder_layers(z,example_box)
         predict_counting_map=out_dict["predict_counting_map"].detach().float()
         pred_points=self._map_to_points(predict_counting_map,threshold=threshold,loc_kernel_size=loc_kernel_size,device=x.device)
 

@@ -7,7 +7,7 @@ from torch.nn import functional as F
 from math import sqrt
 import numpy as np
 from scipy import spatial as ss
-
+from matplotlib import pyplot as plt
 
 def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
                     data_loader: Iterable, optimizer: torch.optim.Optimizer,
@@ -20,12 +20,19 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
     header = 'Epoch: [{}]'.format(epoch)
     metric_logger.set_header(header)
     # for samples, targets in metric_logger.log_every(data_loader, print_freq, header):
+    draw=True
     for inputs, labels in metric_logger.log_every(data_loader):
 
         optimizer.zero_grad()
         inputs = inputs.to(args.gpu)
         
-        outputs_dict = model(inputs)
+        outputs_dict = model(inputs,labels["exampler"])
+        if draw:
+            atten_map=outputs_dict["atten_map"]
+            atten_map=atten_map[0].detach().cpu().numpy()
+            plt.imshow(atten_map)
+            plt.savefig("atten_map.png")
+            draw=False
         loss_dict = criterion(outputs_dict, labels)
         all_loss = loss_dict["all"]
 
@@ -100,9 +107,9 @@ def evaluate_counting_and_locating(model, data_loader, metric_logger, epoch,
         inputs = inputs.to(args.gpu)
         assert inputs.shape[0] == 1
         if args.distributed:
-            pred_points, pred_map=model.module.forward_points(inputs,threshold=0.9,loc_kernel_size=7)
+            pred_points, pred_map=model.module.forward_points(inputs,labels["exampler"],threshold=0.9,loc_kernel_size=7)
         else:
-            pred_points, pred_map=model.forward_points(inputs,threshold=0.9,loc_kernel_size=7)
+            pred_points, pred_map=model.forward_points(inputs,labels["exampler"],threshold=0.9,loc_kernel_size=7)
         count_nums = labels["num"].to(args.gpu).float()
         mae = torch.abs(len(pred_points[0]) - count_nums).data.mean()
         # clamp_mask=(pred_map>0.005).float()

@@ -40,8 +40,7 @@ class Counting_train_base(CocoDetection):
         image = np.array(image)
         bboxes_with_classes = [(obj["bbox"], obj["category_id"])
                                for obj in target]
-        clses, kpses = [], []
-        
+        clses, kpses, boxes = [], [], []
         for bbox, cls in bboxes_with_classes:
             x, y = bbox[0] + bbox[2] / 2, bbox[1] + bbox[3] / 2
             if x >= w or y >= h or x <= 0 or y <= 0:
@@ -49,11 +48,14 @@ class Counting_train_base(CocoDetection):
             else:
                 clses.append(cls)
                 kpses.append((x, y))
+                boxes.append(bbox)
         data = self.alb_transforms(image=image,
-                                   keypoints=kpses,
-                                   class_labels=clses)
+                                #    keypoints=kpses,
+                                   class_labels=clses,
+                                      bboxes=boxes)
         image = data["image"]
         labels = {}
+        data["keypoints"] = [(bbox[0]+bbox[2]/2, bbox[1]+bbox[3]/2) for bbox in data["bboxes"]]
         keep = [
             idx for idx, v in enumerate(data["keypoints"])
             if v[1] < (image.shape[0] - 1) and v[0] < (image.shape[1] - 1)
@@ -63,18 +65,22 @@ class Counting_train_base(CocoDetection):
             return self.__getitem__(random.randint(0, len(self) - 1))
         kpses = torch.as_tensor(data["keypoints"], dtype=torch.float32)[keep]
         clses = torch.as_tensor(data["class_labels"], dtype=torch.long)[keep]
+        boxes = torch.as_tensor(data["bboxes"], dtype=torch.float32)[keep]
+        
         assert kpses.shape[0] == clses.shape[
             0], f"{kpses.shape[0]},{clses.shape[0]}"
         image = self.to_tensor(image=image)["image"]
         labels["points"] = torch.zeros((self.max_len, 2), dtype=torch.float32)
         labels["classes"] = torch.zeros(self.max_len, dtype=torch.long)
         labels["id"] = torch.as_tensor(int(img_id), dtype=torch.long)
+        labels["wh"] = torch.as_tensor([w, h], dtype=torch.long)
+        labels["boxes"] = torch.zeros((self.max_len, 4), dtype=torch.float32)
 
         if labels["num"] > 0:
 
             labels["points"][:kpses.shape[0]] = kpses[:self.max_len]
             labels["classes"][:clses.shape[0]] = clses[:self.max_len]
-
+            labels["boxes"][:boxes.shape[0]] = boxes[:self.max_len]
         if labels["num"] > self.max_len:
             print(
                 f"Warning: the number of points {labels['num']} is larger than max_len {self.max_len}"
@@ -132,32 +138,48 @@ class Counting_test(CocoDetection):
         bboxes_with_classes = [(obj["bbox"], obj["category_id"])
                                for obj in target]
         kpses = []
+        clses = []
+        boxes = []
         for bbox, cls in bboxes_with_classes:
             x, y = bbox[0] + bbox[2] / 2, bbox[1] + bbox[3] / 2
             kpses.append((x, y))
+            boxes.append(bbox)
+            clses.append(cls)
         data = self.alb_transforms(image=image)
         image = data["image"]
-        max_edge = max(image.shape[0], image.shape[1])
+        
+        # max_edge = max(image.shape[0], image.shape[1])
 
-        if max_edge > 2560:
-            scale = 2560 / max_edge
-            image = cv2.resize(image, (0, 0), fx=scale, fy=scale)
+        # if max_edge > 1536:
+        #     scale = 1536 / max_edge
+        #     image = cv2.resize(image, (0, 0), fx=scale, fy=scale)
         labels = {}
 
         labels["num"] = torch.as_tensor(len(kpses), dtype=torch.long)
         labels["wh"] = torch.as_tensor([w, h], dtype=torch.long)
         labels["id"] = torch.as_tensor(int(img_id), dtype=torch.long)
         kpses = torch.as_tensor(kpses, dtype=torch.float32)
-
+        clses = torch.as_tensor(clses, dtype=torch.long)
+        boxes = torch.as_tensor(boxes, dtype=torch.float32)
+        assert kpses.shape[0] == clses.shape[
+            0], f"{kpses.shape[0]},{clses.shape[0]}"
+        
         image = self.to_tensor(image=image)["image"]
         labels["points"] = torch.zeros((self.max_len, 2), dtype=torch.float32)
+        labels["classes"] = torch.zeros(self.max_len, dtype=torch.long)
+        labels["boxes"] = torch.zeros((self.max_len, 4), dtype=torch.float32)
+        
         if labels["num"] > 0:
             labels["points"][:kpses.shape[0]] = kpses[:self.max_len]
+            labels["classes"][:clses.shape[0]] = clses[:self.max_len]
+            labels["boxes"][:boxes.shape[0]] = boxes[:self.max_len]
+            
         if labels["num"] > self.max_len:
             print(
                 f"Warning: the number of points {labels['num']} is larger than max_len {self.max_len}"
             )
             labels["num"] = torch.as_tensor(self.max_len, dtype=torch.long)
+            
         h1, w1 = image.shape[-2], image.shape[-1]
         padsize = 64
         h2 = math.ceil(h1 / padsize) * padsize

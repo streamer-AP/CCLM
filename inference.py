@@ -89,14 +89,14 @@ def evaluate_counting_and_locating(model, data_loader, args, ):
     save_path = args.save_path
     os.makedirs(save_path, exist_ok=True)
     id_filename={}
-    with open(args.Dataset.val.ann_file,"r") as f:
+    with open(args.Dataset.test.ann_file,"r") as f:
         info=json.load(f)
         id_filename={v["id"]: v["file_name"] for v in info["images"]}
     f=open(os.path.join(save_path,"predict.txt"),"w")
     for inputs, labels in logger.log_every(data_loader):
         inputs = inputs.to(args.gpu)
         assert inputs.shape[0] == 1
-        pred_points, pred_map, offsetmap = forward_points(model, inputs)
+        pred_points, pred_map, offsetmap = forward_points(model, inputs,labels["exampler"])
         i = 0
         hf, wf = offsetmap.shape[-2], offsetmap.shape[-1]
 
@@ -112,11 +112,10 @@ def evaluate_counting_and_locating(model, data_loader, args, ):
         img_prefix=args.Dataset.val.img_prefix
         img_path = os.path.join(img_prefix, id_filename[labels["id"][i].item()])
         img=cv2.imread(img_path)
-        
         max_edge = max(img.shape[0], img.shape[1])
 
 
-        scale = 2048 / max_edge
+        scale = 1024 / max_edge
         img = cv2.resize(img, (0, 0), fx=scale, fy=scale)
 
         h1, w1 = img.shape[0],  img.shape[1]
@@ -167,21 +166,24 @@ def evaluate_counting_and_locating(model, data_loader, args, ):
                                                pred_pts.shape[0], sigma_s)
             tp_l, fp_l, fn_l, tp_l_idx, fp_l_idx, fn_l_idx = compute_metrics(dist_matrix, match_matrix,
                                                pred_pts.shape[0], sigma_l)
-        if args.vis:
-            tp_points=[]
-            for idx in tp_s_idx:
-                tp_points.append(pred_points[0][idx])
-            dmap=draw_points(dmap,tp_points,(0,255,0))
-            fp_points=[]
-            for idx in fp_s_idx:
-                fp_points.append(pred_points[0][idx])
-            dmap=draw_points(dmap,fp_points,(255,0,0))
-            fn_points=[]
-            for idx in fn_s_idx:
-                fn_points.append((gt_pts[idx][0]*w1/w,gt_pts[idx][1]*h1/h))
-            dmap=draw_points(dmap,fn_points,(0,0,255))
-            cv2.imwrite(os.path.join(save_path,str(labels["id"][i].item())+f"_dmap_{tp_l}_{fp_l}_{fn_l}.jpg"),dmap)
-            f.write(str(labels["id"][0].item())+" "+str(len(pred_pts)) )
+        try:
+            if args.vis:
+                tp_points=[]
+                for idx in tp_s_idx:
+                    tp_points.append(pred_points[0][idx])
+                dmap=draw_points(dmap,tp_points,(0,255,0))
+                fp_points=[]
+                for idx in fp_s_idx:
+                    fp_points.append(pred_points[0][idx])
+                dmap=draw_points(dmap,fp_points,(255,0,0))
+                fn_points=[]
+                for idx in fn_s_idx:
+                    fn_points.append((gt_pts[idx][0]*w1/w,gt_pts[idx][1]*h1/h))
+                dmap=draw_points(dmap,fn_points,(0,0,255))
+                cv2.imwrite(os.path.join(save_path,str(labels["id"][i].item())+f"_dmap_{tp_l}_{fp_l}_{fn_l}.jpg"),dmap)
+                f.write(str(labels["id"][0].item())+" "+str(len(pred_pts)) )
+        except:
+            continue
         for pt in pred_pts:
             f.write(" "+str(pt[0])+" "+str(pt[1]))
         f.write("\n")
@@ -230,10 +232,12 @@ def evaluate_counting_and_locating(model, data_loader, args, ):
     return stats
 
 @torch.no_grad()
-def forward_points(model, x):
+def forward_points(model, x,ext_info):
     assert x.shape[0]==1
-    z = model.backbone(x)
-    out_dict = model.decoder_layers(z)
+    image=x[:,0:3]
+    z = model.backbone(image)
+    example_box=ext_info[:,:3,...]
+    out_dict = model.decoder_layers(z,example_box)
     counting_map = out_dict["predict_counting_map"].half()
     offset_map = out_dict["offset_map"].half()
 
@@ -266,7 +270,7 @@ def main(args,ckpt_path):
     model_without_ddp.load_state_dict(model_dict)
     model.cuda().eval()
     
-    dataset_val = build_dataset(image_set='val', args=args.Dataset.val)
+    dataset_val = build_dataset(image_set='test', args=args.Dataset.test)
  
     loader_val = DataLoader(dataset_val,
                             batch_size=args.Dataset.val.batch_size,
@@ -284,11 +288,11 @@ def main(args,ckpt_path):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("DenseMap Head ")
-    parser.add_argument("--config", default="example.json")
+    parser.add_argument("--config", default="configs/FSC147/HRNET48.json")
     parser.add_argument("--local_rank", type=int)
-    parser.add_argument("--ckpt",default="weights/best.pth")
+    parser.add_argument("--ckpt",default="outputs/HRNET48_202407172350/checkpoints/best.pth")
     parser.add_argument("--no_save", action="store_true")
-    parser.add_argument("--save_path",default="outputs/example/")
+    parser.add_argument("--save_path",default="outputs/fsc_3/")
     parser.add_argument("--vis", action="store_true")
     args = parser.parse_args()
 

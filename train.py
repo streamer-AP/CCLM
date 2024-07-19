@@ -52,7 +52,7 @@ def main(args):
     if args.distributed:
         sync_model=SyncBatchNorm.convert_sync_batchnorm(model)
         model = torch.nn.parallel.DistributedDataParallel(
-            sync_model, device_ids=[args.gpu], find_unused_parameters=False)
+            sync_model, device_ids=[args.gpu], find_unused_parameters=True)
         model_without_ddp = model.module
 
     # build the dataset and dataloader
@@ -126,7 +126,7 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("DenseMap Head ")
-    parser.add_argument("--config", default="example.json")
+    parser.add_argument("--config", default="configs/FSC147/HRNET48.json")
     parser.add_argument("--local_rank", type=int)
     parser.add_argument("--no_save", action="store_true")
     args = parser.parse_args()
@@ -137,8 +137,8 @@ if __name__ == "__main__":
         cfg = edict(configs)
     print(cfg)
 
-    strtime = time.strftime('%Y%m%d%H%M') + "_" + os.path.basename(
-        args.config)[:-5]
+    strtime = os.path.basename(
+        args.config)[:-5]+ "_" +time.strftime('%Y%m%d%H%M')
 
     output_path = os.path.join(cfg.Misc.tensorboard_dir, strtime)
     if is_main_process() and not args.no_save:

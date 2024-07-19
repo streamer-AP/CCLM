@@ -11,7 +11,6 @@ import torch.utils.data
 from .torchvision_datasets import CocoDetection
 from torch.nn import functional as F
 from .coco import build as build_coco
-from .nwpu_crowd import build_NWPU as build_nwpu_crowd
 from .jhu_crowd import build_JHU as build_jhu_crowd
 from .sta_crowd import build_STA as build_sta_crowd
 from .sta_crowd_2048 import build_STA as build_sta_crowd_2048
@@ -19,6 +18,7 @@ from .stb_crowd import build_STB as build_stb_crowd
 from .fdst_crowd import build_FDST as build_fdst_crowd
 from .transcos_crowd import build_TRANS as build_trans_crowd
 from .tree_crowd import build_TREE as build_tree_crowd
+from .fsc_crowd import build_FSC as build_fsc_crowd
 def get_coco_api_from_dataset(dataset):
     if isinstance(dataset, torch.utils.data.Subset):
         dataset = dataset.dataset
@@ -41,6 +41,8 @@ def build_dataset(image_set, args):
         return build_trans_crowd(image_set,args)
     if args.name=="tree_crowd":
         return build_tree_crowd(image_set,args)
+    if args.name == "fsc_crowd":
+        return build_fsc_crowd(image_set,args)
     raise ValueError(f'dataset {args.name} not supported')
 
 def collate_fn(batch):

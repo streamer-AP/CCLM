@@ -1,7 +1,7 @@
 import os
 import shutil
 
-_ignore_files_ = ["analysis", "outputs", "configs", "__pycache__","data",".git",".vscode", "local_eval","output_old"]
+_ignore_files_ = ["analysis", "outputs", "configs", "__pycache__","data",".git",".vscode", "local_eval","output_old","weights"]
 
 def copy_files(src_path, dest_path):
     files = os.listdir(src_path)

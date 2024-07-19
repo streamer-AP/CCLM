@@ -18,7 +18,7 @@ import random
 from .label_processing import build_label_processing
 import math
 from torch.nn import functional as F
-from .base import JHUCounting_train, JHUCounting_test
+from .base import Counting_train, Counting_test
 
 def make_transform(image_set):
     if image_set == "train":
