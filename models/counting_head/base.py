@@ -53,7 +53,7 @@ def roi_pooling(input, boxes, output_size):
             x_max = x_min + width+1
             y_max = y_min + height+1
             region = input[i, :, y_min:y_max, x_min:x_max]
-            pooled_region = F.adaptive_max_pool2d(region, output_size)
+            pooled_region = F.interpolate(region.unsqueeze(0), size=output_size, mode='bilinear', align_corners=True)
             output[i, j] = pooled_region
 
     return output
@@ -81,6 +81,15 @@ class Simple(nn.Module):
             nn.Sigmoid()
         )
         
+        self.attention_layer = nn.Sequential(
+            nn.Conv2d(49, 49, 3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(49, 49, 3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(49, 1, 1),
+            nn.Sigmoid()
+        )
+        
         self.fpn_fuse1=FPN_fuse(feature_channels=[64,48,96,192,384],fpn_out=64)
         self.fpn_fuse2=FPN_fuse(feature_channels=[64,48,96,192,384],fpn_out=64)
         self.example_fuse=FPN_fuse(feature_channels=[64,48,96,192,384],fpn_out=64)
@@ -99,10 +108,10 @@ class Simple(nn.Module):
 
     def forward(self, x, x_example):
         x0, x1, x2 , x3, x4  = x
-        box=x_example/2
+        boxes=x_example/2
         
         z1=self.fpn_fuse1([x0, x1, x2, x3,x4])
-        z_e=roi_pooling(z1, box, (7, 7))#(N, M, C, 7, 7)
+        z_e=roi_pooling(z1, boxes, (7, 7))#(N, M, C, 7, 7)
         # Reshape z_e and z1 for self-attention calculation
         N, M, C= z_e.shape[:3]
         H,W=z1.shape[2:]
@@ -110,20 +119,29 @@ class Simple(nn.Module):
         z1_reshaped = z1.view(N, C, -1)  # (N, C, H*W)
 
         # Compute attention scores for each sample independently
-        attention_scores = torch.einsum('nmcl,nch->nmlh', z_e_reshaped, z1_reshaped)  # (N, M, 49, H*W)
+        attention_scores = torch.einsum('nmcl,nch->nmlh', z_e_reshaped, z1_reshaped)/C  # (N, M, 49, H*W)
         
         # Aggregate attention scores for each image
-        attention_scores = attention_scores.sum(dim=1)  # (N, 49, H*W)
-
-        # Compute attention map
-        # attention_map = F.softmax(attention_scores, dim=-1)  # (N, 49, H*W)
-        attention_map = attention_scores.mean(dim=1)  # (N, H*W)
-        attention_map = attention_map.view(N, H, W)  # (N, H, W)
-        attention_map = F.sigmoid(attention_map)
-        out1 = self.last_layer(z1*attention_map.unsqueeze(1))
+        attention_scores = attention_scores.mean(dim=1).view(N, 49, H, W)  # (N, 49, H, W)
+        attention_map=self.attention_layer(attention_scores)
+        # attention_map = F.sigmoid(attention_map)
+        out1 = self.last_layer(z1*attention_map)
         z2=self.fpn_fuse2([x0, x1, x2, x3,x4])
         offset = (2 * self.offset_layer(z2) - 1.0) * self.radius
 
+        # with torch.no_grad():
+        #     scales=torch.zeros((N,1))
+        #     scales=scales.to(x0.device)
+        #     for batch_idx,batch_boxes in enumerate(boxes):
+        #         for box in batch_boxes:
+        #             x_min, y_min, height, width = box.long()
+        #             scales[batch_idx,0]+=out1[0,0,y_min:y_min+height,x_min:x_min+width].sum()
+        #         scales[batch_idx,0]=scales[batch_idx,0]/batch_boxes.shape[0]
+        #     scales=scales.unsqueeze(2).unsqueeze(3)
+        #     out1=out1/scales
+                
+                
+            
         out_dict = {}
         out_dict["predict_counting_map"] = out1
         out_dict["offset_map"] = offset

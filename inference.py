@@ -7,6 +7,7 @@ import cv2
 import torch
 import numpy as np
 from scipy import spatial as ss
+from matplotlib import pyplot as plt
 
 from termcolor import cprint
 from easydict import EasyDict as edict
@@ -83,8 +84,8 @@ def evaluate_counting_and_locating(model, data_loader, args, ):
     logger.add_meters(meter_names,meters)
     header = "Test"
     logger.set_header(header)
-    sigma_s = 4
-    sigma_l = 8
+    sigma_s = 8
+    sigma_l = 16
 
     save_path = args.save_path
     os.makedirs(save_path, exist_ok=True)
@@ -96,7 +97,8 @@ def evaluate_counting_and_locating(model, data_loader, args, ):
     for inputs, labels in logger.log_every(data_loader):
         inputs = inputs.to(args.gpu)
         assert inputs.shape[0] == 1
-        pred_points, pred_map, offsetmap = forward_points(model, inputs,labels["exampler"])
+        print(inputs.shape)
+        pred_points, pred_map, offsetmap,attention_map = forward_points(model, inputs,labels["exampler"])
         i = 0
         hf, wf = offsetmap.shape[-2], offsetmap.shape[-1]
 
@@ -166,9 +168,10 @@ def evaluate_counting_and_locating(model, data_loader, args, ):
                                                pred_pts.shape[0], sigma_s)
             tp_l, fp_l, fn_l, tp_l_idx, fp_l_idx, fn_l_idx = compute_metrics(dist_matrix, match_matrix,
                                                pred_pts.shape[0], sigma_l)
-        try:
-            if args.vis:
-                tp_points=[]
+
+        if args.vis:
+            tp_points=[]
+            if len(pred_pts) != 0:
                 for idx in tp_s_idx:
                     tp_points.append(pred_points[0][idx])
                 dmap=draw_points(dmap,tp_points,(0,255,0))
@@ -180,10 +183,17 @@ def evaluate_counting_and_locating(model, data_loader, args, ):
                 for idx in fn_s_idx:
                     fn_points.append((gt_pts[idx][0]*w1/w,gt_pts[idx][1]*h1/h))
                 dmap=draw_points(dmap,fn_points,(0,0,255))
-                cv2.imwrite(os.path.join(save_path,str(labels["id"][i].item())+f"_dmap_{tp_l}_{fp_l}_{fn_l}.jpg"),dmap)
-                f.write(str(labels["id"][0].item())+" "+str(len(pred_pts)) )
-        except:
-            continue
+            for box in labels["exampler"][0]:
+                box=box.cpu().numpy()
+                box=box.astype(np.int32)
+                x,y,w,h=box
+                cv2.rectangle(dmap,(x,y),(x+w,y+h),(0,255,255),2)
+            cv2.imwrite(os.path.join(save_path,str(labels["id"][i].item())+f"_dmap_{tp_l}_{fp_l}_{fn_l}.jpg"),dmap)
+            attention_map=attention_map[0,0].detach().cpu().numpy()
+            plt.imshow(attention_map)
+            plt.savefig(os.path.join(save_path,str(labels["id"][i].item())+f"_atten_map_{tp_l}_{fp_l}_{fn_l}.jpg"))
+            f.write(str(labels["id"][0].item())+" "+str(len(pred_pts)) )
+
         for pt in pred_pts:
             f.write(" "+str(pt[0])+" "+str(pt[1]))
         f.write("\n")
@@ -240,10 +250,10 @@ def forward_points(model, x,ext_info):
     out_dict = model.decoder_layers(z,example_box)
     counting_map = out_dict["predict_counting_map"].half()
     offset_map = out_dict["offset_map"].half()
-
+    attention_map=out_dict["atten_map"].half()
     pred_points = divide_map_to_points(counting_map, offset_map, device=x.device)
 
-    return [pred_points], counting_map, offset_map
+    return [pred_points], counting_map, offset_map,attention_map
 
 
 def gen_global_grid(H, W, padding):
@@ -267,7 +277,7 @@ def main(args,ckpt_path):
     load_param_dict = {k: v for k, v in state_dict.items() if k in model_dict and k.find("grid") == -1}
     model_dict.update(load_param_dict)
     
-    model_without_ddp.load_state_dict(model_dict)
+    model_without_ddp.load_state_dict(model_dict, strict=False)
     model.cuda().eval()
     
     dataset_val = build_dataset(image_set='test', args=args.Dataset.test)
@@ -290,9 +300,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser("DenseMap Head ")
     parser.add_argument("--config", default="configs/FSC147/HRNET48.json")
     parser.add_argument("--local_rank", type=int)
-    parser.add_argument("--ckpt",default="outputs/HRNET48_202407172350/checkpoints/best.pth")
+    parser.add_argument("--ckpt",default="outputs/HRNET48_202407192201/checkpoints/best.pth")
     parser.add_argument("--no_save", action="store_true")
-    parser.add_argument("--save_path",default="outputs/fsc_3/")
+    parser.add_argument("--save_path",default="outputs/fsc_7/")
     parser.add_argument("--vis", action="store_true")
     args = parser.parse_args()
 

@@ -86,7 +86,7 @@
         "type": "rank_loss_final",
         "stride": 2,
         "weight_all": 100,
-        "weight_bg": 5,
+        "weight_bg": 10,
         "weight_ann": 100,
         "num_factor": 1.0,
         "smooth_epoch": 1

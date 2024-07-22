@@ -94,9 +94,16 @@ class FSC147_test(Counting_test):
         new_labels["w1h1"]=labels["w1h1"]
         new_labels["boxes"] = torch.zeros((self.max_len, 4), dtype=torch.float32)
         new_labels["exampler"]= torch.zeros((self.max_len, 4), dtype=torch.float32)
+        new_labels["exampler_ori"]= torch.zeros((self.max_len, 4), dtype=torch.float32)
+        
         target_cnt=0
         exampler_cnt=0
         exampler_mask=torch.zeros((1,image.shape[1],image.shape[2]),dtype=torch.float32)
+        ori_w,ori_h=labels["wh"]#original image size
+        resized_w,resized_h=labels["w1h1"]#resized image size
+        w_scale=ori_w/resized_w
+        h_scale=ori_h/resized_h
+        
         for i in range(labels["num"]):
             if labels["classes"][i] == 0:
                 new_labels["points"][target_cnt] = labels["points"][i]
@@ -104,10 +111,14 @@ class FSC147_test(Counting_test):
                 new_labels["boxes"][target_cnt] = labels["boxes"][i]
                 target_cnt+=1
             else:
-                new_labels["exampler"][exampler_cnt] = labels["boxes"][i]
                 x,y,w,h=labels["boxes"][i]
+                new_labels["exampler_ori"][exampler_cnt] = torch.tensor([x,y,w,h],dtype=torch.float32)
+                x,w=x/w_scale,w/w_scale
+                y,h=y/h_scale,h/h_scale
                 x,y,w,h=int(x),int(y),int(w),int(h)
+                new_labels["exampler"][exampler_cnt] = torch.tensor([x,y,w,h],dtype=torch.float32)
                 exampler_mask[0,y:y+h,x:x+w]=1
+                exampler_cnt+=1
         new_labels["num"] = target_cnt
         image = torch.cat([image,exampler_mask],dim=0)
         return image, new_labels

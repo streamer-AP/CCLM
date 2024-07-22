@@ -29,7 +29,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
         outputs_dict = model(inputs,labels["exampler"])
         if draw and args.gpu==0:
             atten_map=outputs_dict["atten_map"]
-            atten_map=atten_map[0].detach().cpu().numpy()
+            atten_map=atten_map[0,0].detach().cpu().numpy()
             plt.imshow(atten_map)
             plt.savefig("atten_map.png")
             img=inputs[0][:3].detach().cpu().numpy()

@@ -137,6 +137,7 @@ class Counting_test(CocoDetection):
         image = np.array(image)
         bboxes_with_classes = [(obj["bbox"], obj["category_id"])
                                for obj in target]
+        
         kpses = []
         clses = []
         boxes = []
