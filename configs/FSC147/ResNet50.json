@@ -6,7 +6,7 @@
             "name": "resnet50",
             "pretrained": true,
             "out_indices": [
-                0, 1, 2, 3, 4
+                1, 2, 3, 4
             ],
             "others":{
             },
@@ -14,7 +14,11 @@
         },
         "counting_head": {
             "name": "base",
-            "act":"relu"
+            "act":"relu",
+            "channels":[256,512,1024,2048],
+            "roi_size":[31,31],
+            "map_scale":4,
+            "upsample_ratio":[2,2]
         },
         "ckpt":""
     },
@@ -26,7 +30,7 @@
             "ann_file": "/home/xinyan/workspace/counting/FSC/CCLM/data/FSC147/coco_anno/train.json",
             "img_prefix": "/home/xinyan/workspace/counting/FSC/CCLM/data/FSC147/images_384_VarV2",
             "size_divisor": 32,
-            "batch_size":  2,
+            "batch_size":  4,
             "num_workers": 16,
             "shuffle": true,
             "drop_last": true,
@@ -85,7 +89,7 @@
         "type": "rank_loss_final",
         "stride": 2,
         "weight_all": 100,
-        "weight_bg": 5,
+        "weight_bg": 10,
         "weight_ann": 100,
         "num_factor": 1.0,
         "smooth_epoch": 1
@@ -95,7 +99,7 @@
     },
     "Optimizer": {
         "type": "Adamw",
-        "lr": 0.0001,
+        "lr": 0.00001,
         "weight_decay": 0.000001
     },
     "Scheduler": {

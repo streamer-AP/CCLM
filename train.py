@@ -52,7 +52,7 @@ def main(args):
     if args.distributed:
         sync_model=SyncBatchNorm.convert_sync_batchnorm(model)
         model = torch.nn.parallel.DistributedDataParallel(
-            sync_model, device_ids=[args.gpu], find_unused_parameters=True)
+            sync_model, device_ids=[args.gpu], find_unused_parameters=False)
         model_without_ddp = model.module
 
     # build the dataset and dataloader
@@ -126,7 +126,7 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("DenseMap Head ")
-    parser.add_argument("--config", default="configs/FSC147/HRNET48.json")
+    parser.add_argument("--config", default="configs/FSC147/ConvNextS.json")
     parser.add_argument("--local_rank", type=int)
     parser.add_argument("--no_save", action="store_true")
     args = parser.parse_args()

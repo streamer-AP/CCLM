@@ -6,7 +6,7 @@
             "name": "hrnet_w18",
             "pretrained": true,
             "out_indices": [
-                0, 1, 2, 3, 4
+                1, 2, 3, 4
             ],
             "others":{
                 "feature_location": ""
@@ -15,7 +15,8 @@
         },
         "counting_head": {
             "name": "base",
-            "act":"relu"
+            "act":"relu",
+            "channels":[18,36,72,144]
         },
         "ckpt":""
     },
@@ -27,7 +28,7 @@
             "ann_file": "/home/xinyan/workspace/counting/FSC/CCLM/data/FSC147/coco_anno/train.json",
             "img_prefix": "/home/xinyan/workspace/counting/FSC/CCLM/data/FSC147/images_384_VarV2",
             "size_divisor": 32,
-            "batch_size":  2,
+            "batch_size":  8,
             "num_workers": 16,
             "shuffle": true,
             "drop_last": true,
@@ -89,14 +90,14 @@
         "weight_bg": 5,
         "weight_ann": 100,
         "num_factor": 1.0,
-        "smooth_epoch": 1
+        "smooth_epoch": 10
     },
     "Loss_Weight": {
         "type": "constant"
     },
     "Optimizer": {
         "type": "Adamw",
-        "lr": 0.0001,
+        "lr": 0.00001,
         "weight_decay": 0.000001
     },
     "Scheduler": {

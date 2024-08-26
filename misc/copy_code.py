@@ -2,16 +2,21 @@ import os
 import shutil
 
 _ignore_files_ = ["analysis", "outputs", "configs", "__pycache__","data",".git",".vscode", "local_eval","output_old","weights"]
-
+white_list =[".json",".py"]
 def copy_files(src_path, dest_path):
     files = os.listdir(src_path)
     for f in files:
         if len(f) >= 4:
             if f[-4:] in [".out"]:
                 continue
-
         if f not in _ignore_files_:
+            
             next_src_path = os.path.join(src_path, f)
+            for white in white_list:
+                if white in f:
+                    break
+            else:
+                continue
             next_dest_path = os.path.join(dest_path, f)
             if os.path.isfile(next_src_path):
                 # print("src", next_src_path)

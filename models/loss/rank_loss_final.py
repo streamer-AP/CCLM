@@ -91,21 +91,24 @@ class DMap_Loss(nn.Module):
         loss_dict["ann"] = 0
         loss_dict["bg"] = 0
         loss_dict["offset"] = 0
-
         predict = inputs["predict_counting_map"]
         offset = inputs["offset_map"]
-
         num = targets["num"]
+        
         device = predict.device
+        num = num.to(device)
         B, C, H, W = predict.shape
+        gt_d_map = targets["gt_dmaps"].to(device)
+        loss_dmap = F.l1_loss(predict, gt_d_map, reduction="mean")
         predict = F.pad(predict, (self.padding, self.padding, self.padding, self.padding))
         offset = F.pad(offset, (self.padding, self.padding, self.padding, self.padding))
-
+        
         for b in range(B):
             N = int(num[b].item())
             pred_map = predict[b]
             offset_map = offset[b]
-            loss_bg = (pred_map.abs() / H).sum() / W
+
+            loss_bg = pred_map.abs().sum()/ (H * W)
             if N==0:
                 loss_ann =  torch.as_tensor(0.0, device=device)
                 loss_offset = torch.as_tensor(0.0, device=device)
@@ -160,7 +163,6 @@ class DMap_Loss(nn.Module):
                 loc_err =  (offset_map.permute(1, 2, 0) - gt_offset).norm(2, dim=-1)
                 loss_offset = loc_err / (gt_offset.norm(2, dim=-1) + 1)
                 loss_offset = (loss_offset * mask_0).sum() / (H * W)
-                
 
             loss_dict["ann"] += loss_ann
             loss_dict["offset"] += loss_offset
@@ -168,9 +170,9 @@ class DMap_Loss(nn.Module):
         loss_dict["bg"] /= B
         loss_dict["ann"] /= B
         loss_dict["offset"] /= B 
-        
-        loss_dict["all"] = self.weight_bg * self.smooth_weight * loss_dict["bg"] \
-                           + self.weight_ann * loss_dict["ann"] + self.weight_offset * loss_dict["offset"]
+        loss_dict["dmap"] = loss_dmap
+        loss_dict["all"] = self.weight_bg * self.smooth_weight * loss_dict["bg"] + self.weight_ann * loss_dict["ann"] + self.weight_offset * loss_dict["offset"]
+                           
 
         
         return loss_dict

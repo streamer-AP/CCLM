@@ -15,7 +15,7 @@ class FPN_fuse(nn.Module):
         self.conv_fusion = nn.Sequential(
             nn.Conv2d(len(feature_channels)*fpn_out, fpn_out, kernel_size=3, padding=1, bias=False),
             nn.BatchNorm2d(fpn_out),
-            nn.GELU()
+            nn.ReLU()
         )
 
     def forward(self, features):
@@ -48,13 +48,26 @@ def roi_pooling(input, boxes, output_size):
     
     for i in range(N):
         for j in range(M):
-            x_min, y_min, height, width = boxes[i, j].long()
+            x_min, y_min, width, height = boxes[i, j].long()
             
             x_max = x_min + width+1
             y_max = y_min + height+1
             region = input[i, :, y_min:y_max, x_min:x_max]
-            pooled_region = F.interpolate(region.unsqueeze(0), size=output_size, mode='bilinear', align_corners=True)
-            output[i, j] = pooled_region
+            
+            max_size = max(height, width)
+            scale = max_size / max(output_size)
+            new_height = int(height / scale)
+            new_width = int(width / scale)
+            new_height = max(new_height, 1)
+            new_width = max(new_width, 1)
+            region = F.interpolate(region.unsqueeze(0), size=(new_height, new_width), mode='bilinear', align_corners=True)
+            left_pad = (output_size[1] - new_width) // 2
+            right_pad = output_size[1] - new_width - left_pad
+            top_pad = (output_size[0] - new_height) // 2
+            bottom_pad = output_size[0] - new_height - top_pad
+            pooled_region = F.pad(region, (left_pad, right_pad, top_pad, bottom_pad)).squeeze(0)
+                
+            output[i, j] = pooled_region/(0.000001+pooled_region.sum())
 
     return output
     
@@ -63,8 +76,10 @@ def roi_pooling(input, boxes, output_size):
 class Simple(nn.Module):
     def __init__(self, args):
         super(Simple, self).__init__()
+        self.channels=args.channels
+        self.first_channel=self.channels[0]
         self.last_layer = nn.Sequential(
-            nn.Conv2d(64, 64, 3, padding=1),
+            nn.Conv2d(self.first_channel+36, 64, 3, padding=1),
             nn.ReLU(),
             nn.Conv2d(64, 64, 3, padding=1),
             nn.ReLU(),
@@ -73,27 +88,27 @@ class Simple(nn.Module):
         )
 
         self.offset_layer = nn.Sequential(
-            nn.Conv2d(64, 64, 3, padding=1),
+            nn.Conv2d(self.first_channel, 64, 3, padding=1),
             nn.ReLU(),
             nn.Conv2d(64, 64, 3, padding=1),
             nn.ReLU(),
             nn.Conv2d(64, 2, 1),
             nn.Sigmoid()
         )
+        # self.attention_layer = nn.Sequential(
+        #     nn.Conv2d(36, 36, 3, padding=1),
+        #     nn.ReLU(),
+        #     nn.Conv2d(36, 36, 3, padding=1),
+        #     nn.ReLU(),
+        #     nn.Conv2d(36, 1, 1),
+        # )
         
-        self.attention_layer = nn.Sequential(
-            nn.Conv2d(49, 49, 3, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(49, 49, 3, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(49, 1, 1),
-            nn.Sigmoid()
-        )
         
-        self.fpn_fuse1=FPN_fuse(feature_channels=[64,48,96,192,384],fpn_out=64)
-        self.fpn_fuse2=FPN_fuse(feature_channels=[64,48,96,192,384],fpn_out=64)
-        self.example_fuse=FPN_fuse(feature_channels=[64,48,96,192,384],fpn_out=64)
+        self.fpn_fuse1=FPN_fuse(feature_channels=self.channels,fpn_out=self.first_channel)
         self.radius = 8 
+        self.roi_size=args.roi_size
+        self.map_scale=args.map_scale
+        self.upsample_ratio=args.upsample_ratio
         self._initialize_weights()
 
     def _initialize_weights(self):
@@ -107,27 +122,37 @@ class Simple(nn.Module):
                 nn.init.constant_(m.bias, 0)
 
     def forward(self, x, x_example):
-        x0, x1, x2 , x3, x4  = x
-        boxes=x_example/2
-        
-        z1=self.fpn_fuse1([x0, x1, x2, x3,x4])
-        z_e=roi_pooling(z1, boxes, (7, 7))#(N, M, C, 7, 7)
-        # Reshape z_e and z1 for self-attention calculation
-        N, M, C= z_e.shape[:3]
-        H,W=z1.shape[2:]
-        z_e_reshaped = z_e.view(N, M, C, -1)  # (N, M, C, 49)
-        z1_reshaped = z1.view(N, C, -1)  # (N, C, H*W)
+        boxes=x_example/self.map_scale
+        z1=self.fpn_fuse1(x)
+        with torch.no_grad():
+            c_out=3
+            c_in=self.first_channel
+            B=z1.shape[0]
+            H,W=z1.shape[2],z1.shape[3]
+            conv_map=torch.zeros((B,c_out*3*4,H,W),dtype=torch.float32,device=z1.device)
+            weight_H,weight_W=self.roi_size[0]*2**2+1,self.roi_size[0]*2**2+1
+            weights=torch.zeros((B,c_out*3*4,c_in,weight_H,weight_W),dtype=torch.float32,device=z1.device)
+            for i in range(3):
+                roi_size=(self.roi_size[0]*2**i+1,self.roi_size[1]*2**i+1)
+                z_e=roi_pooling(z1, boxes, roi_size)
+            
+                z_e=z_e.view(-1,3,c_in,roi_size[0],roi_size[1])
+                z_e_rotate90_aug=torch.zeros((B,4*3,c_in,roi_size[0],roi_size[1]),dtype=torch.float32,device=z1.device)
+                z_e_rotate90_aug[:,0:3]=z_e
+                z_e_rotate90_aug[:,3:6]=z_e.flip(-1)
+                z_e_rotate90_aug[:,6:9]=z_e.flip(-2)
+                z_e_rotate90_aug[:,9:12]=z_e.flip(-1).flip(-2)
+                padding_H=(weight_H-roi_size[0])//2
+                padding_W=(weight_W-roi_size[1])//2
+                weights[:,i*c_out*4:(i+1)*c_out*4,:,padding_H:padding_H+roi_size[0],padding_W:padding_W+roi_size[1]]=z_e_rotate90_aug
+        for b in range(B):
+            for i in range(3):
+                weight=weights[b,i*c_out*4:(i+1)*c_out*4]
+                conv_map[b,i:i+c_out*4,...]=F.conv2d(z1[b].unsqueeze(0),weight,padding=weight_H//2)
+        attention_map=conv_map.mean(dim=1,keepdim=True)
+        out1 = self.last_layer(torch.cat((conv_map,z1*attention_map),dim=1))
 
-        # Compute attention scores for each sample independently
-        attention_scores = torch.einsum('nmcl,nch->nmlh', z_e_reshaped, z1_reshaped)/C  # (N, M, 49, H*W)
-        
-        # Aggregate attention scores for each image
-        attention_scores = attention_scores.mean(dim=1).view(N, 49, H, W)  # (N, 49, H, W)
-        attention_map=self.attention_layer(attention_scores)
-        # attention_map = F.sigmoid(attention_map)
-        out1 = self.last_layer(z1*attention_map)
-        z2=self.fpn_fuse2([x0, x1, x2, x3,x4])
-        offset = (2 * self.offset_layer(z2) - 1.0) * self.radius
+        offset = (self.map_scale * self.offset_layer(z1) - self.map_scale/2) * self.radius
 
         # with torch.no_grad():
         #     scales=torch.zeros((N,1))
@@ -138,14 +163,17 @@ class Simple(nn.Module):
         #             scales[batch_idx,0]+=out1[0,0,y_min:y_min+height,x_min:x_min+width].sum()
         #         scales[batch_idx,0]=scales[batch_idx,0]/batch_boxes.shape[0]
         #     scales=scales.unsqueeze(2).unsqueeze(3)
+        #     scales=torch.clamp(scales,1,2)
         #     out1=out1/scales
                 
                 
-            
+        offset=F.interpolate(offset, scale_factor=self.upsample_ratio, mode='bilinear', align_corners=True)
+        out1=F.interpolate(out1, scale_factor=self.upsample_ratio, mode='bilinear', align_corners=True)
         out_dict = {}
         out_dict["predict_counting_map"] = out1
         out_dict["offset_map"] = offset
         out_dict["atten_map"] = attention_map
+        out_dict["roi_feature"] = z_e
         return out_dict
     
 

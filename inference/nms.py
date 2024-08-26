@@ -66,7 +66,7 @@ def map_to_points(counting_map, offset_map, device="cuda"):
     padding = radius
 
     B, _, H, W = counting_map.shape
-    counting_map = counting_map * (counting_map > 0.01).half()
+    counting_map = counting_map * (counting_map > 0.0001).half()
     est_cnt = counting_map.sum(dim=[1,2,3]).round().to(torch.int32).cpu().item()
     assert B == 1
     idmap = gen_global_grid(H, W, padding).to(device)   # [1 2 H W]

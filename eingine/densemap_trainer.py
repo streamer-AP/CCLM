@@ -8,6 +8,13 @@ from math import sqrt
 import numpy as np
 from scipy import spatial as ss
 from matplotlib import pyplot as plt
+import cv2
+def draw_dmap(dmap):
+    dmap = dmap / dmap.max()
+    dmap = dmap * 255
+    dmap = dmap.astype(np.uint8)
+    dmap = cv2.applyColorMap(dmap, cv2.COLORMAP_JET)
+    return dmap
 
 def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
                     data_loader: Iterable, optimizer: torch.optim.Optimizer,
@@ -19,24 +26,14 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
 
     header = 'Epoch: [{}]'.format(epoch)
     metric_logger.set_header(header)
+    criterion.update_weight(epoch)
     # for samples, targets in metric_logger.log_every(data_loader, print_freq, header):
-    draw=True
     for inputs, labels in metric_logger.log_every(data_loader):
 
         optimizer.zero_grad()
         inputs = inputs.to(args.gpu)
         
         outputs_dict = model(inputs,labels["exampler"])
-        if draw and args.gpu==0:
-            atten_map=outputs_dict["atten_map"]
-            atten_map=atten_map[0,0].detach().cpu().numpy()
-            plt.imshow(atten_map)
-            plt.savefig("atten_map.png")
-            img=inputs[0][:3].detach().cpu().numpy()
-            img=np.transpose(img,(1,2,0))
-            plt.imshow(img)
-            plt.savefig("img.png")
-            draw=False
         loss_dict = criterion(outputs_dict, labels)
         all_loss = loss_dict["all"]
 
@@ -106,14 +103,32 @@ def evaluate_counting_and_locating(model, data_loader, metric_logger, epoch,
     sigma_s = 4
     sigma_l = 8
     sigma_10=10
-
+    draw=0
     for inputs, labels in metric_logger.log_every(data_loader):
         inputs = inputs.to(args.gpu)
         assert inputs.shape[0] == 1
         if args.distributed:
-            pred_points, pred_map=model.module.forward_points(inputs,labels["exampler"],threshold=0.9,loc_kernel_size=7)
+            pred_points, out_dict =model.module.forward_points(inputs,labels["exampler"],threshold=0.9,loc_kernel_size=11)
         else:
-            pred_points, pred_map=model.forward_points(inputs,labels["exampler"],threshold=0.9,loc_kernel_size=7)
+            pred_points, out_dict =model.forward_points(inputs,labels["exampler"],threshold=0.9,loc_kernel_size=11)
+        pred_map=out_dict["predict_counting_map"].detach().float()
+        if draw%101==1 and args.gpu==0:
+            atten_map=out_dict["atten_map"]
+            atten_map=atten_map[0,0].detach().cpu().numpy()
+            plt.imshow(atten_map)
+            plt.savefig(f"debugs/val_atten_map_{draw}.png")
+            img=inputs[0][:3].detach().cpu().numpy()
+            img=np.transpose(img,(1,2,0))
+            plt.imshow(img)
+            plt.savefig(f"debugs/val_img_{draw}.png")
+            dmap=pred_map[0,0].detach().cpu().numpy()
+            plt.imshow(dmap)
+            plt.savefig(f"debugs/val_pred_map_{draw}.png")
+            roi_feature=out_dict["roi_feature"]
+            roi_feature=roi_feature[0].detach().cpu().numpy()
+            plt.imshow(roi_feature[0][0])
+            plt.savefig(f"debugs/val_roi_feature_{draw}.png")
+        draw+=1
         count_nums = labels["num"].to(args.gpu).float()
         mae = torch.abs(len(pred_points[0]) - count_nums).data.mean()
         # clamp_mask=(pred_map>0.005).float()
@@ -286,7 +301,6 @@ def evaluate_sliding_counting(model, criterion, data_loader, metric_logger,
             loss_dict_reduced = reduce_dict({"mae": mae, "mse": mse})
             metric_logger.update(mae=loss_dict_reduced['mae'])
             metric_logger.update(mse=loss_dict_reduced['mse'])
-
         metric_logger.synchronize_between_processes()
         print("Averaged stats:", metric_logger)
         stats = {

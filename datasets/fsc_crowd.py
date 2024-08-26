@@ -16,10 +16,11 @@ def make_transform(image_set):
             ColorJitter(),
             # ShiftScaleRotate(shift_limit=0.2, scale_limit=0.1, rotate_limit=15,
             #                  p=0.2, border_mode=cv2.BORDER_CONSTANT, value=0),
-            A.LongestMaxSize(768),
-            A.PadIfNeeded(min_height=768, min_width=768, border_mode=cv2.BORDER_CONSTANT, value=0),
+            A.LongestMaxSize(1024),
+            A.PadIfNeeded(min_height=1024, min_width=1024, border_mode=cv2.BORDER_CONSTANT, value=0),
 
             A.HorizontalFlip(),
+            A.VerticalFlip(),
             A.Normalize(),
         ],
             # keypoint_params=A.KeypointParams(format='xy', label_fields=[
@@ -54,6 +55,8 @@ class FSC147_train(Counting_train):
         new_labels["boxes"] = torch.zeros((self.max_len, 4), dtype=torch.float32)
         exampler_mask=torch.zeros((1,image.shape[1],image.shape[2]),dtype=torch.float32)
         new_labels["exampler"]= torch.zeros((self.max_len, 4), dtype=torch.float32)
+        new_labels["gt_dmaps"]=labels["gt_dmaps"]
+        
         target_cnt=0
         exampler_cnt=0
         for i in range(labels["num"]):
@@ -95,7 +98,7 @@ class FSC147_test(Counting_test):
         new_labels["boxes"] = torch.zeros((self.max_len, 4), dtype=torch.float32)
         new_labels["exampler"]= torch.zeros((self.max_len, 4), dtype=torch.float32)
         new_labels["exampler_ori"]= torch.zeros((self.max_len, 4), dtype=torch.float32)
-        
+        new_labels["fg"]=torch.zeros((1,image.shape[1],image.shape[2]),dtype=torch.float32)
         target_cnt=0
         exampler_cnt=0
         exampler_mask=torch.zeros((1,image.shape[1],image.shape[2]),dtype=torch.float32)
@@ -103,12 +106,17 @@ class FSC147_test(Counting_test):
         resized_w,resized_h=labels["w1h1"]#resized image size
         w_scale=ori_w/resized_w
         h_scale=ori_h/resized_h
-        
         for i in range(labels["num"]):
             if labels["classes"][i] == 0:
                 new_labels["points"][target_cnt] = labels["points"][i]
                 new_labels["classes"][target_cnt] = labels["classes"][i]
                 new_labels["boxes"][target_cnt] = labels["boxes"][i]
+                x_c,y_c=labels["points"][i]
+                x_min=max(0,int(x_c-32))
+                x_max=min(int(x_c+32),image.shape[2])
+                y_min=max(0,int(y_c-32))
+                y_max=min(int(y_c+32),image.shape[1])
+                new_labels["fg"][0,y_min:y_max,x_min:x_max]=1
                 target_cnt+=1
             else:
                 x,y,w,h=labels["boxes"][i]

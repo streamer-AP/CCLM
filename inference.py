@@ -23,7 +23,7 @@ from models.utils import module2model
 from eingine.utils import reduce_dict, is_main_process, hungarian
 from inference.nms import divide_map_to_points
 from inference.localmaximum import forward_points as forward_points_local
-
+from torch.utils.data.distributed import DistributedSampler
 torch.backends.cudnn.enabled = True
 torch.backends.cudnn.benchmark = True
 
@@ -93,12 +93,17 @@ def evaluate_counting_and_locating(model, data_loader, args, ):
     with open(args.Dataset.test.ann_file,"r") as f:
         info=json.load(f)
         id_filename={v["id"]: v["file_name"] for v in info["images"]}
-    f=open(os.path.join(save_path,"predict.txt"),"w")
+    f=open(os.path.join(save_path,f"predict_{args.gpu}.txt"),"w")
     for inputs, labels in logger.log_every(data_loader):
         inputs = inputs.to(args.gpu)
         assert inputs.shape[0] == 1
-        print(inputs.shape)
+        
         pred_points, pred_map, offsetmap,attention_map = forward_points(model, inputs,labels["exampler"])
+        # pred_points, out_dict =model.forward_points(inputs,labels["exampler"],threshold=0.5,loc_kernel_size=11)
+        # pred_map=out_dict["predict_counting_map"]
+        # offsetmap=out_dict["offset_map"]
+        # attention_map=out_dict["atten_map"]
+        
         i = 0
         hf, wf = offsetmap.shape[-2], offsetmap.shape[-1]
 
@@ -192,7 +197,7 @@ def evaluate_counting_and_locating(model, data_loader, args, ):
             attention_map=attention_map[0,0].detach().cpu().numpy()
             plt.imshow(attention_map)
             plt.savefig(os.path.join(save_path,str(labels["id"][i].item())+f"_atten_map_{tp_l}_{fp_l}_{fn_l}.jpg"))
-            f.write(str(labels["id"][0].item())+" "+str(len(pred_pts)) )
+        f.write(str(id_filename[labels["id"][i].item()])+" "+str(len(pred_pts)) )
 
         for pt in pred_pts:
             f.write(" "+str(pt[0])+" "+str(pt[1]))
@@ -252,7 +257,7 @@ def forward_points(model, x,ext_info):
     offset_map = out_dict["offset_map"].half()
     attention_map=out_dict["atten_map"].half()
     pred_points = divide_map_to_points(counting_map, offset_map, device=x.device)
-
+    print(len(pred_points),torch.sum(counting_map))
     return [pred_points], counting_map, offset_map,attention_map
 
 
@@ -279,30 +284,36 @@ def main(args,ckpt_path):
     
     model_without_ddp.load_state_dict(model_dict, strict=False)
     model.cuda().eval()
-    
+    if args.distributed:
+        model = torch.nn.parallel.DistributedDataParallel(
+            model, device_ids=[args.gpu], find_unused_parameters=False)
+        model_without_ddp = model.module
+
     dataset_val = build_dataset(image_set='test', args=args.Dataset.test)
- 
+    sampler_val = DistributedSampler(
+        dataset_val, shuffle=False) if args.distributed else None
     loader_val = DataLoader(dataset_val,
                             batch_size=args.Dataset.val.batch_size,
-                            sampler=None,
+                            sampler=sampler_val,
                             shuffle=False,
                             num_workers=args.Dataset.val.num_workers,
                             pin_memory=True)
 
 
-    stats = evaluate_counting_and_locating(model, loader_val,args)
-    for key, value in stats.items():
-        cprint(f'{key}:{value}', 'green')
-    with open(os.path.join(args.save_path, "stats.json"), "w") as f:
-        json.dump(stats, f, indent=4)
+    stats = evaluate_counting_and_locating(model_without_ddp, loader_val,args)
+    if is_main_process():
+        for key, value in stats.items():
+            cprint(f'{key}:{value}', 'green')
+        with open(os.path.join(args.save_path, "stats.json"), "w") as f:
+            json.dump(stats, f, indent=4)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("DenseMap Head ")
-    parser.add_argument("--config", default="configs/FSC147/HRNET48.json")
+    parser.add_argument("--config", default="configs/FSC147/ConvNextS.json")
     parser.add_argument("--local_rank", type=int)
-    parser.add_argument("--ckpt",default="outputs/HRNET48_202407192201/checkpoints/best.pth")
+    parser.add_argument("--ckpt",default="outputs/ConvNextS_202408221602/checkpoints/best.pth")
     parser.add_argument("--no_save", action="store_true")
-    parser.add_argument("--save_path",default="outputs/fsc_7/")
+    parser.add_argument("--save_path",default="outputs/fsc_convnext_test_v2/")
     parser.add_argument("--vis", action="store_true")
     args = parser.parse_args()
 
