@@ -126,7 +126,7 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("DenseMap Head ")
-    parser.add_argument("--config", default="configs/FSC147/ConvNextS.json")
+    parser.add_argument("--config", default="configs/FSCLVIS/ConvNextS.json")
     parser.add_argument("--local_rank", type=int)
     parser.add_argument("--no_save", action="store_true")
     args = parser.parse_args()

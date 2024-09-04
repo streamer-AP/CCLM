@@ -45,11 +45,9 @@ def roi_pooling(input, boxes, output_size):
     N, C, H, W = input.shape
     M = boxes.shape[1]
     output = torch.zeros((N, M, C, output_size[0], output_size[1]), device=input.device)
-    
     for i in range(N):
         for j in range(M):
             x_min, y_min, width, height = boxes[i, j].long()
-            
             x_max = x_min + width+1
             y_max = y_min + height+1
             region = input[i, :, y_min:y_max, x_min:x_max]
@@ -79,7 +77,7 @@ class Simple(nn.Module):
         self.channels=args.channels
         self.first_channel=self.channels[0]
         self.last_layer = nn.Sequential(
-            nn.Conv2d(self.first_channel+36, 64, 3, padding=1),
+            nn.Conv2d(self.first_channel+60, 64, 3, padding=1),
             nn.ReLU(),
             nn.Conv2d(64, 64, 3, padding=1),
             nn.ReLU(),
@@ -125,7 +123,7 @@ class Simple(nn.Module):
         boxes=x_example/self.map_scale
         z1=self.fpn_fuse1(x)
         with torch.no_grad():
-            c_out=3
+            c_out=5
             c_in=self.first_channel
             B=z1.shape[0]
             H,W=z1.shape[2],z1.shape[3]
@@ -136,12 +134,12 @@ class Simple(nn.Module):
                 roi_size=(self.roi_size[0]*2**i+1,self.roi_size[1]*2**i+1)
                 z_e=roi_pooling(z1, boxes, roi_size)
             
-                z_e=z_e.view(-1,3,c_in,roi_size[0],roi_size[1])
-                z_e_rotate90_aug=torch.zeros((B,4*3,c_in,roi_size[0],roi_size[1]),dtype=torch.float32,device=z1.device)
-                z_e_rotate90_aug[:,0:3]=z_e
-                z_e_rotate90_aug[:,3:6]=z_e.flip(-1)
-                z_e_rotate90_aug[:,6:9]=z_e.flip(-2)
-                z_e_rotate90_aug[:,9:12]=z_e.flip(-1).flip(-2)
+                z_e=z_e.view(-1,c_out,c_in,roi_size[0],roi_size[1])
+                z_e_rotate90_aug=torch.zeros((B,4*c_out,c_in,roi_size[0],roi_size[1]),dtype=torch.float32,device=z1.device)
+                z_e_rotate90_aug[:,0:c_out]=z_e
+                z_e_rotate90_aug[:,c_out:c_out*2]=z_e.flip(-1)
+                z_e_rotate90_aug[:,c_out*2:c_out*3]=z_e.flip(-2)
+                z_e_rotate90_aug[:,c_out*3:c_out*4]=z_e.flip(-1).flip(-2)
                 padding_H=(weight_H-roi_size[0])//2
                 padding_W=(weight_W-roi_size[1])//2
                 weights[:,i*c_out*4:(i+1)*c_out*4,:,padding_H:padding_H+roi_size[0],padding_W:padding_W+roi_size[1]]=z_e_rotate90_aug

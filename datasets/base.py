@@ -33,7 +33,6 @@ class Counting_train_base(CocoDetection):
     def __getitem__(self, index):
 
         image, target = super().__getitem__(index)
-        
         w, h = image.size
         img_id = self.ids[index]
 

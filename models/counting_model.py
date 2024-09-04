@@ -24,7 +24,7 @@ class SingleScaleEncoderDecoderCounting(nn.Module):
     @autocast("cuda")
     def forward(self, x, ext_info):
         image=x[:,0:3]
-        example_box=ext_info[:,:3,...]# B*3*4 for x_min, y_min, width, height
+        example_box=ext_info[:,:5,...]# B*3*4 for x_min, y_min, width, height
         
         z = self.backbone(image)
         
@@ -44,7 +44,7 @@ class SingleScaleEncoderDecoderCounting(nn.Module):
         assert loc_kernel_size%2==1
         assert x.shape[0]==1
         image=x[:,0:3]
-        example_box=ext_info[:,:3,...]# B*3*4 for x_min, y_min, width, height
+        example_box=ext_info[:,:5,...]# B*3*4 for x_min, y_min, width, height
         z = self.backbone(image)
         out_dict = self.decoder_layers(z,example_box)
         predict_counting_map=out_dict["predict_counting_map"].detach().float()
